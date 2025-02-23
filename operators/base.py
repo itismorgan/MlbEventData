@@ -1,42 +1,50 @@
-from abc import ABC, abstractmethod
-from os import path, getcwd, makedirs
+import sqlite3
+from typing import Protocol
+from pathlib import Path
 
 from pyspark.sql import SparkSession, DataFrame
-from pyspark.sql import types, functions
+from pyspark.sql import functions
 
 
-class BaseOperator(ABC):
+class Operator(Protocol):
 
-    # def __init__(self, data_dir='data'):
-    #     self._data_dir = path.join(getcwd(), data_dir)
+    data_dir: Path | str
+
+    def execute(self) -> None:
+        ...
+
+
+class BaseSparkOperator:
+
+    CORES = 'all'
+    MEMORY = '8g'
     
-    # @property
-    # def data_dir(self):
-    #     if not path.exists(self._data_dir):
-    #         makedirs(self._data_dir)
-    #     return self._data_dir
+    _spark = None
 
-    @abstractmethod
-    def execute(self):
-        pass
-
-
-class BaseSpark(BaseOperator):
-
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.spark: SparkSession = SparkSession.builder.getOrCreate()
-        # self._init_spark()
+    def __init__(self, 
+                 source_data: Path | str, 
+                 data_dir: Path | str='data',
+                 **kwargs):
+        self.source_data = Path(source_data)
+        self.data_dir = Path.cwd() / data_dir / 'spark'
+        self.db: Db = SqliteDb
     
-    # def _init_spark(self):  # Needed??? I don't think checkpoints make sense, instead save to parquet
-    #     if not path.exists(self.spark_dir):
-    #         makedirs(self.spark_dir)
-    #     self.spark.sparkContext.setCheckpointDir(self.spark_dir)
-    
-    # @property
-    # def spark_dir(self):
-    #     return path.join(self.data_dir, 'spark')
-    
+    @property
+    def spark(self):
+        return self.get_spark()
+
+    @classmethod
+    def get_spark(cls):
+        cores = '*' if cls.CORES == 'all' else cls.CORES
+        memory = cls.MEMORY
+        if not cls._spark:
+            cls._spark: SparkSession = SparkSession.builder \
+                .master(f'local[{cores}]') \
+                .config('spark.driver.memory', memory) \
+                .config('spark.executor.memory', memory) \
+                .getOrCreate()
+        return cls._spark
+
     @staticmethod
     def concat_dataframes(dataframes: list[DataFrame]) -> DataFrame:
         out = dataframes.pop()
@@ -46,8 +54,6 @@ class BaseSpark(BaseOperator):
 
     @staticmethod
     def rename_columns(df: DataFrame, name_map:dict[str, str]) -> DataFrame:
-        # for col in col_name_map.keys():
-        #     dataframe = dataframe.withColumnRenamed(col, col_name_map[col])
         exprs = [f'{col} AS {name_map[col]}' if col in name_map else col for col in df.columns]
         return df.selectExpr(*exprs)
 
@@ -65,3 +71,22 @@ class BaseSpark(BaseOperator):
         return df.withColumns({f'csv{i}': split_col.getItem(i) for i in range(col_count)})
 
 
+class Db(Protocol):
+
+    @classmethod
+    def write_table(cls, df: DataFrame):
+        ...
+
+
+class SqliteDb:
+    # MVP implementation, Sqlite implementation requires 
+    # converting DFs to memory which limits performance
+
+    DB_NAME = 'mlb_events.db'
+    _init_con = False
+
+    @classmethod
+    def write_table(cls, df: DataFrame, table_name: str):
+        df = df.toPandas()
+        with sqlite3.connect(cls.DB_NAME) as conn:
+            df.to_sql(table_name, conn, if_exists='replace', index=False, chunksize=1000)
