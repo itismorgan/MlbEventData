@@ -1,12 +1,14 @@
+from shutil import rmtree
+
 from pyspark.sql import DataFrame
 from pyspark.sql.functions import udf, monotonically_increasing_id, first
 from pyspark.sql.types import StructType, StructField, StringType
 
-from operators.base import BaseSparkOperator
+from operators.base import Operator, BaseSparkOperator
 
 
 class EventsInitialParsing(BaseSparkOperator):
-    
+
     data_name = 'events_initial'
     event_dirs = ['events', 'ngl_b', 'ngl_e', 'allstar']
     schema = StructType([
@@ -19,6 +21,8 @@ class EventsInitialParsing(BaseSparkOperator):
         StructField('col7', StringType()),
     ])
 
+    _DELETE_DATA = True  # delete intermediate parquet when cleanup method is called
+
     @property
     def source_paths(self):
         return [self.source_data / d for d in self.event_dirs]
@@ -26,12 +30,16 @@ class EventsInitialParsing(BaseSparkOperator):
     @property
     def parq_path(self):
         return str(self.data_dir / self.data_name)
+    
+    def cleanup(self):
+        if self._DELETE_DATA:
+            rmtree(self.parq_path)
 
     def execute(self):
         events = [self.spark.read.csv(str(p), schema=self.schema) for p in self.source_paths]
         events = self.concat_dataframes(events)
 
-        gi = GameIdUDF()
+        gi = _GameIdUDF()
         set_game_id = udf(gi.set_row_id)
         events = events.withColumns({
             'game_id': set_game_id(events['event_type'], events['col2']),
@@ -41,13 +49,21 @@ class EventsInitialParsing(BaseSparkOperator):
         events.write.mode('overwrite').parquet(self.parq_path)
 
 
-class EventTable(BaseSparkOperator):
+class EventTables(BaseSparkOperator):
+
+    TABLES: list[Operator] = []
 
     def get_event_data(self) -> DataFrame:
         return self.spark.read.parquet(str(self.source_data))
 
+    @classmethod
+    def register_table(cls, subcls: "EventTables"):
+        cls.TABLES.append(subcls)
+        return subcls
 
-class GameEventsTable(EventTable):
+
+@EventTables.register_table
+class GameEventsTable(EventTables):
 
     data_name = 'game_events'
 
@@ -64,7 +80,8 @@ class GameEventsTable(EventTable):
         self.db.write_table(df, self.data_name)
 
 
-class GameInfoTable(EventTable):
+@EventTables.register_table
+class GameInfoTable(EventTables):
 
     data_name = 'game_info'
 
@@ -81,7 +98,8 @@ class GameInfoTable(EventTable):
         self.db.write_table(df, self.data_name)
 
 
-class GameDataTable(EventTable):
+@EventTables.register_table
+class GameDataTable(EventTables):
 
     data_name = 'game_data'
 
@@ -95,7 +113,8 @@ class GameDataTable(EventTable):
         self.db.write_table(df, self.data_name)
 
 
-class GameRostersTable(EventTable):
+@EventTables.register_table
+class GameRostersTable(EventTables):
 
     data_name = 'game_rosters'
 
@@ -112,7 +131,8 @@ class GameRostersTable(EventTable):
         self.db.write_table(df, self.data_name)
 
 
-class UmpireChangeEventsTable(EventTable):
+@EventTables.register_table
+class UmpireChangeEventsTable(EventTables):
 
     data_name = 'umpire_change_events'
 
@@ -128,7 +148,8 @@ class UmpireChangeEventsTable(EventTable):
         self.db.write_table(df, self.data_name)
 
 
-class CommentsTable(EventTable):
+@EventTables.register_table
+class CommentsTable(EventTables):
     
     data_name = 'comments'
 
@@ -142,7 +163,8 @@ class CommentsTable(EventTable):
         self.db.write_table(df, self.data_name)
 
 
-class AdjustmentsTable(EventTable):
+@EventTables.register_table
+class AdjustmentsTable(EventTables):
     
     data_name = 'adjustments'
 
@@ -158,7 +180,7 @@ class AdjustmentsTable(EventTable):
 
 ###  UDFs  ###
 
-class GameIdUDF:
+class _GameIdUDF:
 
     def __init__(self):
         self.current_id = None
