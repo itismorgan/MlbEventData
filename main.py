@@ -26,7 +26,7 @@ def main():
     for table_op in event_tables:
         table_op.execute()
     initial_rs_parse.cleanup()
-    
+
     if EXPORT_DB_CONNECTION_TO_DESKTOP:
         BaseSparkOperator.db.export_conn_to_desktop()
 

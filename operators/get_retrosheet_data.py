@@ -10,15 +10,16 @@ RETROSHEET_URL = "https://retrosheet.org/downloads/alldata.zip"
 
 
 class RetrosheetToStorage:
-
-    def __init__(self, 
-                 url: str=RETROSHEET_URL, 
-                 delete_zipfile: bool=True, 
-                 data_dir: Path | str='data'):
+    def __init__(
+        self,
+        url: str = RETROSHEET_URL,
+        delete_zipfile: bool = True,
+        data_dir: Path | str = "data",
+    ):
         self.url = url
         self.delete_zipfile = delete_zipfile
-        self.data_dir = Path.cwd() / data_dir / 'retrosheet'
-        self.zipfile_path = self.data_dir / 'retrosheet_data.zip'
+        self.data_dir = Path.cwd() / data_dir / "retrosheet"
+        self.zipfile_path = self.data_dir / "retrosheet_data.zip"
 
     def execute(self) -> None:
         self.download_data()
@@ -28,29 +29,31 @@ class RetrosheetToStorage:
 
     def download_data(self) -> None:
         if self.data_dir.exists():
-            logging.info('Deleting previous version of data...')
+            logging.info("Deleting previous version of data...")
             shutil.rmtree(self.data_dir)
         self.data_dir.mkdir(parents=True)
-        logging.info('Getting retrosheet data...')
-        with requests.get(self.url, stream=True)as response, \
-          self.zipfile_path.open('wb') as file:
+        logging.info("Getting retrosheet data...")
+        with (
+            requests.get(self.url, stream=True) as response,
+            self.zipfile_path.open("wb") as file,
+        ):
             response.raise_for_status()
-            progress_bar = tqdm(unit="B", unit_scale=True, desc='Downloading')
+            progress_bar = tqdm(unit="B", unit_scale=True, desc="Downloading")
             for chunk in response.iter_content(chunk_size=None):
                 file.write(chunk)
                 progress_bar.update(len(chunk))
-        logging.info('Retrosheet zip file downloaded.')
+        logging.info("Retrosheet zip file downloaded.")
 
     def extract_data(self) -> None:
-        logging.info('Extracting retrosheet data...')
+        logging.info("Extracting retrosheet data...")
         with ZipFile(self.zipfile_path.resolve()) as unzipper:
             for file_info in unzipper.infolist():
                 if file_info.is_dir():
                     continue
                 file_path = self.data_dir / file_info.filename
                 file_path.parent.mkdir(parents=True, exist_ok=True)
-                with unzipper.open(file_info) as src, file_path.open('wb') as dest:
-                    logging.debug(f'Unzipping file to {str(file_path)}')
+                with unzipper.open(file_info) as src, file_path.open("wb") as dest:
+                    logging.debug(f"Unzipping file to {str(file_path)}")
                     dest.write(src.read())
-                    logging.debug(f'Successfully unzipped file to {str(file_path)}')
-        logging.info('Retrosheet data extracted.')
+                    logging.debug(f"Successfully unzipped file to {str(file_path)}")
+        logging.info("Retrosheet data extracted.")
