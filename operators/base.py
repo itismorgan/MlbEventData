@@ -35,6 +35,7 @@ class BaseSparkOperator:
 
     @classmethod
     def get_spark(cls):
+        # TODO: implement default log level to error
         cores = '*' if cls.CORES == 'all' else cls.CORES
         memory = cls.MEMORY
         if not cls._spark:
