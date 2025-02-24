@@ -55,10 +55,16 @@ class EventsInitialParsing(BaseSparkOperator):
 
 
 class EventTables(BaseSparkOperator):
+    data_name: str
+
     TABLES: list[Operator] = []
 
     def get_event_data(self) -> DataFrame:
         return self.spark.read.parquet(str(self.source_data))
+
+    def write_table(self, df: DataFrame) -> None:
+        parq_path = self.data_dir / self.data_name
+        self.db.write_table(df=df, table_name=self.data_name, parquet_path=parq_path)
 
     @classmethod
     def register_table(cls, subcls: "EventTables"):
@@ -86,7 +92,7 @@ class GameEventsTable(EventTables):
         )
         df = self.rename_columns(df, col_names)
         df = self.convert_df_datatypes(df, type_map)
-        self.db.write_table(df, self.data_name)
+        self.write_table(df)
 
 
 @EventTables.register_table
@@ -109,7 +115,7 @@ class GameInfoTable(EventTables):
             .agg(first("col3"))
         )
         df = self.convert_df_datatypes(df, types=type_map)
-        self.db.write_table(df, self.data_name)
+        self.write_table(df)
 
 
 @EventTables.register_table
@@ -129,7 +135,7 @@ class GameDataTable(EventTables):
         )
         df = self.rename_columns(df, col_names)
         df = self.convert_df_datatypes(df, type_map)
-        self.db.write_table(df, self.data_name)
+        self.write_table(df)
 
 
 @EventTables.register_table
@@ -163,7 +169,7 @@ class GameRostersTable(EventTables):
         )
         df = self.rename_columns(df, col_names)
         df = self.convert_df_datatypes(df, type_map)
-        self.db.write_table(df, self.data_name)
+        self.write_table(df)
 
 
 @EventTables.register_table
@@ -179,7 +185,7 @@ class UmpireChangeEventsTable(EventTables):
         df = df.select(["record_id", "game_id", "csv1", "csv2", "csv3"])
         df = self.rename_columns(df, col_names)
         df = self.convert_df_datatypes(df, type_map)
-        self.db.write_table(df, self.data_name)
+        self.write_table(df)
 
 
 @EventTables.register_table
@@ -195,7 +201,7 @@ class CommentsTable(EventTables):
             .select(["record_id", "game_id", "col2"])
         )
         df = self.rename_columns(df, col_names)
-        self.db.write_table(df, self.data_name)
+        self.write_table(df)
 
 
 @EventTables.register_table
@@ -214,7 +220,7 @@ class AdjustmentsTable(EventTables):
             )
             .select(["record_id", "game_id", "event_type", "adjustment_events_map"])
         )
-        self.db.write_table(df, self.data_name)
+        self.write_table(df)
 
 
 ###  UDFs  ###

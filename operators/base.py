@@ -1,3 +1,4 @@
+import duckdb
 import sqlite3
 from typing import Protocol
 from pathlib import Path
@@ -9,18 +10,38 @@ from pyspark.sql import functions
 class Operator(Protocol):
     data_dir: Path | str
 
-    def execute(self) -> None: 
-        ...
+    def execute(self) -> None: ...
 
 
 class Db(Protocol):
     @classmethod
-    def write_table(cls, df: DataFrame) -> None: 
-        ...
+    def write_table(cls, df: DataFrame, **kwargs) -> None: ...
 
     @classmethod
-    def export_conn_to_desktop(cls) -> None: 
-        ...
+    def export_conn_to_desktop(cls) -> None: ...
+
+
+class DuckdbDb:
+    DB_NAME = "mlb_events.duckdb"
+    _conn = None
+
+    @classmethod
+    def get_conn(cls):
+        if not cls._conn:
+            cls._conn = duckdb.connect(cls.DB_NAME)
+        return cls._conn
+
+    @classmethod
+    def write_table(
+        cls, df: DataFrame, table_name: str, parquet_path: Path | str
+    ) -> None:
+        df.write.mode("overwrite").parquet(str(parquet_path))
+        s = f"CREATE VIEW {table_name} AS SELECT * FROM read_parquet('{parquet_path}/*.parquet')"
+        cls.get_conn().execute(s)
+
+    @classmethod
+    def export_conn_to_desktop(cls):
+        _export_conn(conn_name="duckdb", db_name=cls.DB_NAME)
 
 
 class SqliteDb:
@@ -40,10 +61,7 @@ class SqliteDb:
 
     @classmethod
     def export_conn_to_desktop(cls):
-        conn = Path.cwd() / cls.DB_NAME
-        dest = _desktop_path_if_exists_else_home()
-        with open(dest / "mlb_sqlite_conn.txt", "w") as file:
-            file.write(str(conn))
+        _export_conn(conn_name="sqlite", db_name=cls.DB_NAME)
 
 
 class BaseSparkOperator:
@@ -51,7 +69,7 @@ class BaseSparkOperator:
     MEMORY = "8g"
     _LOG_LEVEL = "ERROR"
 
-    db: Db = SqliteDb
+    db: Db = DuckdbDb
     _spark = None
 
     def __init__(self, source_data: Path | str, data_dir: Path | str = "data"):
@@ -112,6 +130,13 @@ class BaseSparkOperator:
 
 
 # Helpers
+def _export_conn(conn_name: str, db_name):
+    conn = Path.cwd() / db_name
+    dest = _desktop_path_if_exists_else_home()
+    with open(dest / f"mlb_{conn_name}_conn.txt", "w") as file:
+        file.write(str(conn))
+
+
 def _desktop_path_if_exists_else_home():
     out = Path.home()
     desktop = out / "Desktop"
