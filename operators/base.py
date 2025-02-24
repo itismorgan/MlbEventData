@@ -10,15 +10,18 @@ from pyspark.sql import functions
 class Operator(Protocol):
     data_dir: Path | str
 
-    def execute(self) -> None: ...
+    def execute(self) -> None: 
+        ...
 
 
 class Db(Protocol):
     @classmethod
-    def write_table(cls, df: DataFrame, **kwargs) -> None: ...
+    def write_table(cls, df: DataFrame, **kwargs) -> None:
+        ...
 
     @classmethod
-    def export_conn_to_desktop(cls) -> None: ...
+    def export_conn_to_desktop(cls) -> None: 
+        ...
 
 
 class DuckdbDb:
